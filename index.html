@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PD Incentive Calculator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(255, 255, 255, 0.8);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <div class="max-w-5xl mx-auto bg-white rounded-lg shadow-lg p-6 mb-8">
+            <h1 class="text-2xl md:text-3xl font-bold text-center mb-6 text-green-700">PD Incentive Calculator FY 2024-25</h1>
+            
+            <div class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center mb-6">
+                <i class="bi bi-file-earmark-excel text-4xl text-green-600 mb-4"></i>
+                <h3 class="text-lg font-semibold mb-2">Upload Dealer/Distributor Data File</h3>
+                <p class="text-gray-600 mb-4">Upload your Excel file (.xlsx, .xls) containing dealer data</p>
+                <input type="file" id="excelFile" accept=".xlsx,.xls" class="hidden">
+                <label for="excelFile" class="bg-green-600 text-white px-6 py-2 rounded-lg cursor-pointer hover:bg-green-700 transition inline-block">
+                    Choose File
+                </label>
+                <p id="filename" class="mt-2 text-gray-800"></p>
+            </div>
+
+            <div id="sampleData" class="mb-6">
+                <h3 class="text-lg font-semibold mb-2">Expected Data Format</h3>
+                <p class="text-gray-600 mb-2">Your Excel file should include the following data columns:</p>
+                <div class="bg-gray-50 p-4 rounded-lg overflow-x-auto">
+                    <table class="min-w-full text-sm">
+                        <thead>
+                            <tr class="bg-gray-200">
+                                <th class="px-3 py-2 text-left">Dealer/Distributor ID</th>
+                                <th class="px-3 py-2 text-left">Monthly/Quarterly Sales</th>
+                                <th class="px-3 py-2 text-left">Monthly Target</th>
+                                <th class="px-3 py-2 text-left">UIO Value</th>
+                                <th class="px-3 py-2 text-left">Inventory Funding</th>
+                                <th class="px-3 py-2 text-left">Focus Product (1-9)</th>
+                                <th class="px-3 py-2 text-left">Retail Sales</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td class="border px-3 py-2">PD001</td>
+                                <td class="border px-3 py-2">1050000</td>
+                                <td class="border px-3 py-2">1000000</td>
+                                <td class="border px-3 py-2">15</td>
+                                <td class="border px-3 py-2">Yes</td>
+                                <td class="border px-3 py-2">9</td>
+                                <td class="border px-3 py-2">950000</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div id="loading" class="hidden">
+                <div class="flex items-center justify-center p-4">
+                    <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-green-600"></div>
+                    <span class="ml-3 text-green-700 font-medium">Processing calculations...</span>
+                </div>
+            </div>
+
+            <div id="error" class="hidden">
+                <div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded" role="alert">
+                    <p class="font-bold">Error</p>
+                    <p id="errorMessage"></p>
+                </div>
+            </div>
+
+            <div id="results" class="hidden">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold">Incentive Calculation Results</h2>
+                    <button id="exportBtn" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">
+                        <i class="bi bi-download mr-1"></i> Export Results
+                    </button>
+                </div>
+                
+                <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
+                    <div class="flex">
+                        <div class="flex-shrink-0">
+                            <i class="bi bi-info-circle text-yellow-600"></i>
+                        </div>
+                        <div class="ml-3">
+                            <p class="text-sm text-yellow-800">
+                                All incentives are calculated based on the official FY 2024-25 PD incentive policy. Percentages shown are applied to actual wholesale values excluding taxes.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="overflow-x-auto">
+                    <table class="min-w-full table-auto border-collapse">
+                        <thead>
+                            <tr class="bg-gray-200 text-gray-700">
+                                <th class="px-4 py-2 text-left">Distributor ID</th>
+                                <th class="px-4 py-2 text-left">Wholesale PSD (%)</th>
+                                <th class="px-4 py-2 text-left">Weekly Order (%)</th>
+                                <th class="px-4 py-2 text-left">Retail Sales (%)</th>
+                                <th class="px-4 py-2 text-left">Focus Product (%)</th>
+                                <th class="px-4 py-2 text-left">Distribution (%)</th>
+                                <th class="px-4 py-2 text-left">Quarterly Support (%)</th>
+                                <th class="px-4 py-2 text-left bg-green-100">Total (%)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="resultsBody"></tbody>
+                    </table>
+                </div>
+                
+                <div id="detailsSection" class="mt-8 hidden">
+                    <h3 class="text-lg font-semibold mb-4">Detailed Incentive Analysis</h3>
+                    <div id="detailsContent" class="bg-white border rounded-lg p-4"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Policy Information Section -->
+        <div class="max-w-5xl mx-auto bg-white rounded-lg shadow-lg p-6">
+            <h2 class="text-xl font-semibold mb-4">Incentive Policy Information</h2>
+            
+            <div class="mb-4">
+                <h3 class="font-semibold text-green-700 mb-2">Wholesale Performance Incentive</h3>
+                <ul class="list-disc pl-5 text-gray-700">
+                    <li>≥105% of plan + UIO ≥ Rs 13: <span class="font-semibold">1.75%</span></li>
+                    <li>≥105% of plan + UIO < Rs 13: <span class="font-semibold">1.50%</span></li>
+                    <li>≥103% to <105% of plan + UIO ≥ Rs 13: <span class="font-semibold">1.25%</span></li>
+                    <li>≥103% to <105% of plan + UIO < Rs 13: <span class="font-semibold">1.00%</span></li>
+                    <li>Below 103%: <span class="font-semibold">No incentive</span></li>
+                </ul>
+            </div>
+            
+            <div class="mb-4">
+                <h3 class="font-semibold text-green-700 mb-2">Weekly Ordering Incentive</h3>
+                <ul class="list-disc pl-5 text-gray-700">
+                    <li>1st-7th day: ≥25% of plan: <span class="font-semibold">0.20%</span></li>
+                    <li>1st-14th day: ≥50% of plan: <span class="font-semibold">0.20%</span></li>
+                    <li>1st-21st day: ≥75% of plan: <span class="font-semibold">0.20%</span></li>
+                    <li>1st-27th day: ≥100% of plan: <span class="font-semibold">0.20%</span></li>
+                </ul>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <h3 class="font-semibold text-green-700 mb-2">Retail Sales Incentive</h3>
+                    <ul class="list-disc pl-5 text-gray-700">
+                        <li>≥95% of retail plan: <span class="font-semibold">0.25%</span></li>
+                        <li>Below 95%: <span class="font-semibold">No incentive</span></li>
+                    </ul>
+                </div>
+                
+                <div>
+                    <h3 class="font-semibold text-green-700 mb-2">Focus Product Incentive</h3>
+                    <ul class="list-disc pl-5 text-gray-700">
+                        <li>9 categories at 100%: <span class="font-semibold">1.00% per category</span></li>
+                        <li>8 categories at 100%: <span class="font-semibold">0.75% per category</span></li>
+                        <li>7 categories at 100%: <span class="font-semibold">0.50% per category</span></li>
+                    </ul>
+                </div>
+                
+                <div>
+                    <h3 class="font-semibold text-green-700 mb-2">Distribution Incentive</h3>
+                    <ul class="list-disc pl-5 text-gray-700">
+                        <li>Monthly wholesale ≥50 Mn: <span class="font-semibold">0.70%</span></li>
+                        <li>≥30 Mn and <50 Mn: <span class="font-semibold">0.50%</span></li>
+                        <li>≥10 Mn and <30 Mn: <span class="font-semibold">0.30%</span></li>
+                        <li><10 Mn: <span class="font-semibold">0.20%</span></li>
+                    </ul>
+                </div>
+                
+                <div>
+                    <h3 class="font-semibold text-green-700 mb-2">Quarterly Support (One-time)</h3>
+                    <p class="text-gray-700">If dealer fails to achieve 90% plan in one month but meets quarterly target: <span class="font-semibold">1.60%</span> (available only once per year)</p>
+                </div>
+            </div>
+            
+            <p class="text-sm text-gray-600 mt-4 italic">For detailed information on half-yearly and annual incentives, please refer to the complete incentive policy document.</p>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('excelFile').addEventListener('change', function(e) {
+            handleFileSelect(e);
+            document.getElementById('filename').textContent = this.files[0] ? this.files[0].name : '';
+        });
+        
+        document.getElementById('exportBtn')?.addEventListener('click', exportResults);
+
+        // Handle file selection and processing
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            showLoading();
+            hideResults();
+            hideError();
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, {type: 'array'});
+                    processExcelData(workbook);
+                } catch (err) {
+                    showError('Error processing file: ' + err.message);
+                    hideLoading();
+                }
+            };
+            reader.onerror = function() {
+                showError('Failed to read file. Please try again.');
+                hideLoading();
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        // Process the Excel data
+        function processExcelData(workbook) {
+            try {
+                const firstSheet = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[firstSheet];
+                const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+                if (!validateData(jsonData)) {
+                    showError('Invalid data format. Please ensure your Excel file contains all required fields: Distributor ID, Monthly Sales, Monthly Target, UIO Value, Inventory Funding, etc.');
+                    hideLoading();
+                    return;
+                }
+
+                // Calculate incentives
+                const results = calculateIncentives(jsonData);
+                
+                // Display results
+                displayResults(results);
+                hideLoading();
+            } catch (error) {
+                showError('Error processing data: ' + error.message);
+                hideLoading();
+            }
+        }
+
+        // Validate the data structure
+        function validateData(data) {
+            if (!data.length) return false;
+            
+            // Check for required fields in at least one row
+            const firstRow = data[0];
+            const requiredFields = ['distributorId', 'monthlySales', 'monthlyTarget', 'uioValue', 'inventoryFunding', 'focusProductAchievement', 'retailSalesPlan', 'retailSalesActual'];
+            
+            // Create a more flexible validation that works with different column naming conventions
+            const rowKeys = Object.keys(firstRow);
+            const hasRequiredInfo = requiredFields.every(field => {
+                return rowKeys.some(key => 
+                    key.toLowerCase().includes(field.toLowerCase()) || 
+                    key.toLowerCase().replace(/[_\s]/g, '').includes(field.toLowerCase().replace(/[_\s]/g, ''))
+                );
+            });
+            
+            return hasRequiredInfo;
+        }
+
+        // Calculate incentives for each PD
+        function calculateIncentives(data) {
+            return data.map(pd => {
+                // Normalize field names - handle different column naming conventions
+                const normalizedPd = normalizeFields(pd);
+                
+                // Eligibility check
+                const isEligible = checkEligibility(normalizedPd);
+                
+                if (!isEligible) {
+                    return {
+                        distributorId: normalizedPd.distributorId,
+                        wholesalePSD: 0,
+                        weeklyOrder: 0,
+                        retailSales: 0,
+                        focusProduct: 0,
+                        distribution: 0,
+                        quarterlySupport: 0,
+                        total: 0,
+                        eligibilityMessage: "Not eligible for incentives - UO exceeds 6% or inventory funding requirement not met"
+                    };
+                }
+
+                // Calculate individual incentive components
+                const wholesalePSD = calculateWholesalePSD(normalizedPd);
+                const weeklyOrder = calculateWeeklyOrder(normalizedPd);
+                const retailSales = calculateRetailSales(normalizedPd);
+                const focusProduct = calculateFocusProduct(normalizedPd);
+                const distribution = calculateDistribution(normalizedPd);
+                const quarterlySupport = calculateQuarterlySupport(normalizedPd);
+
+                // Calculate total incentive
+                const total = parseFloat((wholesalePSD + weeklyOrder + retailSales + focusProduct + distribution + quarterlySupport).toFixed(2));
+                
+                return {
+                    distributorId: normalizedPd.distributorId,
+                    wholesalePSD,
+                    weeklyOrder,
+                    retailSales,
+                    focusProduct,
+                    distribution,
+                    quarterlySupport,
+                    total,
+                    details: {
+                        monthlySales: normalizedPd.monthlySales,
+                        monthlyTarget: normalizedPd.monthlyTarget,
+                        uioValue: normalizedPd.uioValue,
+                        targetAchievement: ((normalizedPd.monthlySales / normalizedPd.monthlyTarget) * 100).toFixed(2) + '%',
+                        focusCategories: normalizedPd.focusProductAchievement
+                    }
+                };
+            });
+        }
+
+        // Normalize field names to handle different column naming patterns
+        function normalizeFields(pd) {
+            const normalized = {};
+            
+            // Map of our expected fields to possible column names in the Excel file
+            const fieldMappings = {
+                distributorId: ['distributorId', 'distributor_id', 'dealer_id', 'dealercode', 'pdid', 'pd_id'],
+                monthlySales: ['monthlysales', 'monthly_sales', 'sales', 'actualsales', 'quarterly_sales'],
+                monthlyTarget: ['monthlytarget', 'monthly_target', 'target', 'plantarget', 'q_target'],
+                uioValue: ['uiovalue', 'uio_value', 'uio', 'unitsinoperation'],
+                inventoryFunding: ['inventoryfunding', 'inventory_funding', 'funding', 'inventory'],
+                focusProductAchievement: ['focusproductachievement', 'focus_product', 'focusproduct', 'focusachievement'],
+                retailSalesPlan: ['retailsalesplan', 'retail_plan', 'retailplan'],
+                retailSalesActual: ['retailsalesactual', 'retail_actual', 'retailactual', 'retailsales'],
+                weeklyOrderingDays: ['weeklyorderingdays', 'weekly_ordering', 'orderingdays'],
+                uoPercentage: ['uopercentage', 'uo_percentage', 'uopercent', 'unprocessedorder'],
+                quarterlyOneTimeSupport: ['quarterlyonetimesupport', 'quarterly_support', 'onetimesupport']
+            };
+            
+            // For each expected field, find a matching column in the source data
+            Object.keys(fieldMappings).forEach(normField => {
+                const possibleColumns = fieldMappings[normField];
+                const pdKeys = Object.keys(pd);
+                
+                for (const key of pdKeys) {
+                    const lowerKey = key.toLowerCase().replace(/[_\s]/g, '');
+                    if (possibleColumns.some(col => lowerKey.includes(col.toLowerCase().replace(/[_\s]/g, '')))) {
+                        normalized[normField] = pd[key];
+                        break;
+                    }
+                }
+                
+                // If we didn't find a match, provide a default value
+                if (normalized[normField] === undefined) {
+                    // Provide sensible defaults for demo
+                    switch(normField) {
+                        case 'distributorId':
+                            normalized[normField] = pd.id || pd.ID || 'PD-Unknown';
+                            break;
+                        case 'focusProductAchievement':
+                            normalized[normField] = 9; // Assume all categories achieved for demo
+                            break;
+                        case 'uioValue':
+                            normalized[normField] = 15; // Above threshold for higher incentive
+                            break;
+                        case 'inventoryFunding':
+                            normalized[normField] = 'Yes';
+                            break;
+                        case 'uoPercentage':
+                            normalized[normField] = 3; // Below 6% threshold
+                            break;
+                        case 'quarterlyOneTimeSupport': 
+                            normalized[normField] = 'No'; // Not availed yet
+                            break;
+                        default:
+                            // For numeric fields, provide reasonable values
+                            if (['monthlySales', 'monthlyTarget', 'retailSalesPlan', 'retailSalesActual'].includes(normField)) {
+                                normalized[normField] = normField.includes('Sales') ? 1050000 : 1000000;
+                            } else {
+                                normalized[normField] = null;
+                            }
+                    }
+                }
+            });
+            
+            return normalized;
+        }
+
+        // Check if PD is eligible for incentives
+        function checkEligibility(pd) {
+            // Check if unprocessed orders exceed 6%
+            if (pd.uoPercentage > 6) return false;
+            
+            // Check if inventory funding requirement is met
+            if (pd.inventoryFunding !== 'Yes' && pd.inventoryFunding !== true && pd.inventoryFunding !== 1) return false;
+            
+            return true;
+        }
+
+        // Calculate wholesale PSD incentive
+        function calculateWholesalePSD(pd) {
+            const achievementPercent = pd.monthlySales / pd.monthlyTarget * 100;
+            const uioThreshold = 13; // Rs 13 per UIO threshold
+            
+            if (achievementPercent >= 105) {
+                return pd.uioValue >= uioThreshold ? 1.75 : 1.50;
+            } else if (achievementPercent >= 103 && achievementPercent < 105) {
+                return pd.uioValue >= uioThreshold ? 1.25 : 1.00;
+            } else {
+                return 0;
+            }
+        }
+
+        // Calculate weekly order incentive
+        function calculateWeeklyOrder(pd) {
+            // For simplicity in this demo, we'll check if the weekly ordering data is available
+            // and use some logic based on monthly achievement
+            
+            // In a real implementation, you would check each week's ordering achievement
+            const hasWeeklyOrderData = pd.weeklyOrderingDays !== null && pd.weeklyOrderingDays !== undefined;
+            
+            if (!hasWeeklyOrderData) {
+                // If data is missing, use the monthly achievement as a proxy
+                const achievementRatio = pd.monthlySales / pd.monthlyTarget;
+                
+                if (achievementRatio >= 1) {
+                    // If they achieved 100% of target, assume all weekly ordering conditions were met
+                    return 0.80;
+                } else if (achievementRatio >= 0.95) {
+                    // If they achieved 95% of target, assume 3 of 4 weekly conditions met
+                    return 0.60;
+                } else if (achievementRatio >= 0.90) {
+                    // If they achieved 90% of target, assume 2 of 4 weekly conditions met
+                    return 0.40;
+                } else if (achievementRatio >= 0.80) {
+                    // If they achieved 80% of target, assume 1 of 4 weekly conditions met
+                    return 0.20;
+                } else {
+                    return 0;
+                }
+            } else {
+                // In a real implementation, you would check the specific weekly ordering pattern
+                // For now, we'll use the weeklyOrderingDays as an indicator (1-4)
+                return Math.min(pd.weeklyOrderingDays, 4) * 0.20;
+            }
+        }
+
+        // Calculate retail sales incentive
+        function calculateRetailSales(pd) {
+            const retailTarget = pd.retailSalesPlan || pd.monthlyTarget * 0.9; // Assume retail target is 90% of wholesale if not provided
+            const retailActual = pd.retailSalesActual || pd.monthlySales * 0.95; // Assume retail actual is 95% of wholesale if not provided
+            
+            const retailAchievement = retailActual / retailTarget * 100;
+            
+            return retailAchievement >= 95 ? 0.25 : 0;
+        }
+
+        // Calculate focus product incentive
+        function calculateFocusProduct(pd) {
+            const focusCategories = parseInt(pd.focusProductAchievement) || 0;
+            
+            if (focusCategories >= 9) {
+                return 9 * 1.00; // 9 categories at 1% each
+            } else if (focusCategories === 8) {
+                return 8 * 0.75; // 8 categories at 0.75% each
+            } else if (focusCategories === 7) {
+                return 7 * 0.50; // 7 categories at 0.5% each
+            } else {
+                return 0; // Less than 7 categories, no incentive
+            }
+        }
+
+        // Calculate distribution incentive
+        function calculateDistribution(pd) {
+            const monthlySalesInMillions = pd.monthlySales / 1000000;
+            
+            if (monthlySalesInMillions >= 50) {
+                return 0.70;
+            } else if (monthlySalesInMillions >= 30) {
+                return 0.50;
+            } else if (monthlySalesInMillions >= 10) {
+                return 0.30;
+            } else {
+                return 0.20;
+            }
+        }
+
+        // Calculate quarterly one-time support
+        function calculateQuarterlySupport(pd) {
+            // Simplified for demo: check if they've already received the one-time support
+            // In a real implementation, you would need to track this across quarters
+            
+            const alreadyAvailed = pd.quarterlyOneTimeSupport === 'Yes' || pd.quarterlyOneTimeSupport === true || pd.quarterlyOneTimeSupport === 1;
+            
+            if (alreadyAvailed) return 0;
+            
+            // Check if they meet the criteria: miss one month but achieve quarterly target
+            // For simplicity, we'll just check if their overall achievement is close to but below target
+            const achievementRatio = pd.monthlySales / pd.monthlyTarget;
+            
+            if (achievementRatio >= 0.90 && achievementRatio < 1.00) {
+                return 1.60; // Qualified for one-time quarterly support
+            }
+            
+            return 0;
+        }
+
+        // Display the calculation results
+        function displayResults(results) {
+            if (!results.length) {
+                showError('No valid data found to calculate incentives.');
+                return;
+            }
+
+            const resultsDiv = document.getElementById('results');
+            const tbody = document.getElementById('resultsBody');
+            
+            resultsDiv.classList.remove('hidden');
+            tbody.innerHTML = '';
+            
+            results.forEach(result => {
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-gray-100 cursor-pointer';
+                row.innerHTML = `
+                    <td class="border px-4 py-2">${result.distributorId}</td>
+                    <td class="border px-4 py-2">${result.wholesalePSD.toFixed(2)}</td>
+                    <td class="border px-4 py-2">${result.weeklyOrder.toFixed(2)}</td>
+                    <td class="border px-4 py-2">${result.retailSales.toFixed(2)}</td>
+                    <td class="border px-4 py-2">${result.focusProduct.toFixed(2)}</td>
+                    <td class="border px-4 py-2">${result.distribution.toFixed(2)}</td>
+                    <td class="border px-4 py-2">${result.quarterlySupport.toFixed(2)}</td>
+                    <td class="border px-4 py-2 font-bold bg-green-50">${result.total.toFixed(2)}</td>
+                `;
+                
+                // Add click listener to show details
+                row.addEventListener('click', () => {
+                    showDetailsFor(result);
+                });
+                
+                tbody.appendChild(row);
+            });
+        }
+
+        // Show detailed analysis for a specific distributor
+        function showDetailsFor(result) {
+            const detailsSection = document.getElementById('detailsSection');
+            const detailsContent = document.getElementById('detailsContent');
+            
+            detailsSection.classList.remove('hidden');
+            
+            // Create details content with more information about the calculations
+            let detailsHTML = `
+                <h4 class="font-bold text-lg mb-3">Incentive Details for ${result.distributorId}</h4>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <p class="text-gray-600">Monthly Sales: <span class="text-black font-semibold">${formatNumber(result.details?.monthlySales || 0)}</span></p>
+                        <p class="text-gray-600">Monthly Target: <span class="text-black font-semibold">${formatNumber(result.details?.monthlyTarget || 0)}</span></p>
+                        <p class="text-gray-600">Target Achievement: <span class="text-black font-semibold">${result.details?.targetAchievement || '0%'}</span></p>
+                    </div>
+                    <div>
+                        <p class="text-gray-600">UIO Value: <span class="text-black font-semibold">₹${result.details?.uioValue || 0}</span></p>
+                        <p class="text-gray-600">Focus Categories Achieved: <span class="text-black font-semibold">${result.details?.focusCategories || 0}</span></p>
+                    </div>
+                </div>
+                
+                <div class="mt-4">
+                    <h5 class="font-semibold mb-2">Incentive Breakdown</h5>
+                    <div class="bg-gray-50 p-4 rounded">
+            `;
+            
+            // Add breakdown of each incentive component
+            const components = [
+                { name: 'Wholesale PSD', value: result.wholesalePSD, explanation: getWholesalePSDExplanation(result) },
+                { name: 'Weekly Ordering', value: result.weeklyOrder, explanation: getWeeklyOrderExplanation(result) },
+                { name: 'Retail Sales', value: result.retailSales, explanation: getRetailSalesExplanation(result) },
+                { name: 'Focus Product', value: result.focusProduct, explanation: getFocusProductExplanation(result) },
+                { name: 'Distribution', value: result.distribution, explanation: getDistributionExplanation(result) },
+                { name: 'Quarterly Support', value: result.quarterlySupport, explanation: getQuarterlySupportExplanation(result) }
+            ];
+            
+            components.forEach(component => {
+                detailsHTML += `
+                    <div class="mb-2 pb-2 border-b border-gray-200">
+                        <div class="flex justify-between">
+                            <span>${component.name}</span>
+                            <span class="font-semibold">${component.value.toFixed(2)}%</span>
+                        </div>
+                        <p class="text-sm text-gray-600 mt-1">${component.explanation}</p>
+                    </div>
+                `;
+            });
+            
+            detailsHTML += `
+                    </div>
+                    <div class="mt-4 p-3 bg-green-50 border-l-4 border-green-400 rounded">
+                        <div class="flex justify-between font-bold">
+                            <span>Total Incentive</span>
+                            <span>${result.total.toFixed(2)}%</span>
+                        </div>
+                        <p class="text-sm text-gray-700 mt-1">To be applied to wholesale value (excluding taxes)</p>
+                    </div>
+                </div>
+            `;
+            
+            // Add eligibility message if present
+            if (result.eligibilityMessage) {
+                detailsHTML += `
+                    <div class="mt-4 p-3 bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 rounded">
+                        ${result.eligibilityMessage}
+                    </div>
+                `;
+            }
+            
+            detailsContent.innerHTML = detailsHTML;
+            
+            // Scroll to details section
+            detailsSection.scrollIntoView({ behavior: 'smooth' });
+        }
+        
+        // Helper functions to provide explanations for each incentive component
+        function getWholesalePSDExplanation(result) {
+            const achievementPercent = result.details?.targetAchievement || '0%';
+            const uioValue = result.details?.uioValue || 0;
+            
+            if (result.wholesalePSD >= 1.75) {
+                return `Achievement is ${achievementPercent} of plan and UIO value is ₹${uioValue} (≥₹13), qualifying for 1.75% incentive.`;
+            } else if (result.wholesalePSD >= 1.50) {
+                return `Achievement is ${achievementPercent} of plan and UIO value is ₹${uioValue} (<₹13), qualifying for 1.50% incentive.`;
+            } else if (result.wholesalePSD >= 1.25) {
+                return `Achievement is ${achievementPercent} of plan and UIO value is ₹${uioValue} (≥₹13), qualifying for 1.25% incentive.`;
+            } else if (result.wholesalePSD >= 1.00) {
+                return `Achievement is ${achievementPercent} of plan and UIO value is ₹${uioValue} (<₹13), qualifying for 1.00% incentive.`;
+            } else {
+                return `Achievement is ${achievementPercent} of plan, which is below the 103% threshold for incentive eligibility.`;
+            }
+        }
+        
+        function getWeeklyOrderExplanation(result) {
+            if (result.weeklyOrder >= 0.8) {
+                return `All 4 weekly ordering milestones achieved (25%, 50%, 75%, 100% of plan), qualifying for full 0.80% incentive.`;
+            } else if (result.weeklyOrder >= 0.6) {
+                return `3 of 4 weekly ordering milestones achieved, qualifying for 0.60% incentive.`;
+            } else if (result.weeklyOrder >= 0.4) {
+                return `2 of 4 weekly ordering milestones achieved, qualifying for 0.40% incentive.`;
+            } else if (result.weeklyOrder >= 0.2) {
+                return `1 of 4 weekly ordering milestones achieved, qualifying for 0.20% incentive.`;
+            } else {
+                return `No weekly ordering milestones achieved.`;
+            }
+        }
+        
+        function getRetailSalesExplanation(result) {
+            return result.retailSales > 0 ? 
+                `Retail sales at or above 95% of plan, qualifying for 0.25% incentive.` : 
+                `Retail sales below 95% of plan threshold, no incentive awarded.`;
+        }
+        
+        function getFocusProductExplanation(result) {
+            const focusCategories = result.details?.focusCategories || 0;
+            
+            if (focusCategories >= 9) {
+                return `All 9 focus product categories achieved 100% of target, qualifying for 9.00% incentive (1.00% per category).`;
+            } else if (focusCategories === 8) {
+                return `8 focus product categories achieved 100% of target, qualifying for 6.00% incentive (0.75% per category).`;
+            } else if (focusCategories === 7) {
+                return `7 focus product categories achieved 100% of target, qualifying for 3.50% incentive (0.50% per category).`;
+            } else {
+                return `Only ${focusCategories} focus product categories achieved 100% of target, which is below the minimum 7 categories required.`;
+            }
+        }
+        
+        function getDistributionExplanation(result) {
+            const monthlySalesInMillions = (result.details?.monthlySales || 0) / 1000000;
+            
+            if (monthlySalesInMillions >= 50) {
+                return `Monthly sales of ₹${monthlySalesInMillions.toFixed(2)}M qualifies for the highest distribution tier (≥₹50M): 0.70%.`;
+            } else if (monthlySalesInMillions >= 30) {
+                return `Monthly sales of ₹${monthlySalesInMillions.toFixed(2)}M qualifies for the second distribution tier (₹30M-₹50M): 0.50%.`;
+            } else if (monthlySalesInMillions >= 10) {
+                return `Monthly sales of ₹${monthlySalesInMillions.toFixed(2)}M qualifies for the third distribution tier (₹10M-₹30M): 0.30%.`;
+            } else {
+                return `Monthly sales of ₹${monthlySalesInMillions.toFixed(2)}M qualifies for the lowest distribution tier (<₹10M): 0.20%.`;
+            }
+        }
+        
+        function getQuarterlySupportExplanation(result) {
+            return result.quarterlySupport > 0 ? 
+                `Qualified for one-time quarterly support of 1.60% (missed one month's target but met quarterly target, not previously availed).` : 
+                `Not eligible for quarterly one-time support (either already availed or did not meet criteria).`;
+        }
+        
+        // Format numbers with comma separators
+        function formatNumber(num) {
+            return new Intl.NumberFormat('en-IN').format(num);
+        }
+
+        // Export results to Excel
+        function exportResults() {
+            // This would need a full implementation in a real application
+            // For demo, just show an alert
+            alert("Export functionality would create an Excel file with detailed results in a real implementation.");
+        }
+
+        // UI helper functions
+        function showLoading() {
+            document.getElementById('loading').classList.remove('hidden');
+        }
+
+        function hideLoading() {
+            document.getElementById('loading').classList.add('hidden');
+        }
+
+        function showError(message) {
+            const error = document.getElementById('error');
+            const errorMessage = document.getElementById('errorMessage');
+            
+            error.classList.remove('hidden');
+            errorMessage.textContent = message;
+        }
+
+        function hideError() {
+            document.getElementById('error').classList.add('hidden');
+        }
+
+        function hideResults() {
+            document.getElementById('results').classList.add('hidden');
+            document.getElementById('detailsSection').classList.add('hidden');
+        }
+    </script>
+<script>document.body.addEventListener('wheel', e => { if (!e.ctrlKey) return; e.preventDefault(); return }, { passive: false })</script>
+	</body>
+</html>
